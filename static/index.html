@@ -122,6 +122,35 @@ header {
 }
 #apiKey:focus { border-color: var(--blue); }
 
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(360px, calc(100vw - 40px));
+  margin-top: 18px;
+}
+
+#authApiKey {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+#authApiKey:focus { border-color: var(--blue); }
+
+.auth-card .btn-primary {
+  flex: none;
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
 #statusBadge {
   font-size: 11px;
   color: var(--muted);
@@ -801,7 +830,7 @@ mark {
   </button>
   <div class="apikey-wrap">
     <label for="apiKey">API Key</label>
-    <input type="password" id="apiKey" placeholder="X-API-Key" autocomplete="off">
+    <input type="password" id="apiKey" data-api-key-input placeholder="X-API-Key" autocomplete="off">
   </div>
   <span id="statusBadge"></span>
 </header>
@@ -814,6 +843,10 @@ mark {
   </svg>
   <h2 style="font-size:18px; margin-bottom:8px; color:var(--text); font-weight:500">Log Viewer가 잠겨 있습니다</h2>
   <p style="font-size:13px; color:var(--muted)">우측 상단에 유효한 API Key를 입력하여 잠금을 해제해 주세요.</p>
+  <div class="auth-card">
+    <input type="password" id="authApiKey" data-api-key-input placeholder="API Key" autocomplete="off">
+    <button class="btn-primary" onclick="search()">잠금 해제</button>
+  </div>
 </div>
 
 <div class="layout" id="mainLayout" style="display:none;">
@@ -1018,7 +1051,7 @@ mark {
   const path = window.location.pathname;
   const base = !path || path === '/' ? '' : path.replace(/\/$/, '');
   const script = document.createElement('script');
-  script.src = base + '/static/app.js';
+  script.src = base + '/static/app.js?v=20260426-2';
   document.currentScript.replaceWith(script);
 })();
 </script>

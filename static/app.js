@@ -18,24 +18,27 @@ let activePreset = null;
 /* ── Init ───────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
   const saved = sessionStorage.getItem(SS_KEY);
-  if (saved) document.getElementById('apiKey').value = saved;
+  keyInputs().forEach(input => {
+    if (saved) input.value = saved;
 
-  document.getElementById('apiKey').addEventListener('input', e => {
-    const key = e.target.value.trim();
-    sessionStorage.setItem(SS_KEY, key);
-    clearTimeout(apiKeyTimer);
-    if (!key) {
-      toggleLayout(false);
-      return;
-    }
-    apiKeyTimer = setTimeout(search, 350);
-  });
-
-  document.getElementById('apiKey').addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
+    input.addEventListener('input', e => {
+      const key = e.target.value.trim();
+      syncKeyInputs(key, e.target);
+      sessionStorage.setItem(SS_KEY, key);
       clearTimeout(apiKeyTimer);
-      search();
-    }
+      if (!key) {
+        toggleLayout(false);
+        return;
+      }
+      apiKeyTimer = setTimeout(search, 350);
+    });
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        clearTimeout(apiKeyTimer);
+        search();
+      }
+    });
   });
 
   document.getElementById('keyword').addEventListener('input', () => {
@@ -91,7 +94,20 @@ function pushURL() {
 }
 
 /* ── Helpers ─────────────────────────────────────────────── */
-function apiKey() { return document.getElementById('apiKey').value.trim(); }
+function keyInputs() {
+  return [...document.querySelectorAll('[data-api-key-input]')];
+}
+
+function syncKeyInputs(key, source) {
+  keyInputs().forEach(input => {
+    if (input !== source) input.value = key;
+  });
+}
+
+function apiKey() {
+  const input = keyInputs().find(el => el.value.trim());
+  return input ? input.value.trim() : '';
+}
 
 function getAppBasePath() {
   const path = window.location.pathname;

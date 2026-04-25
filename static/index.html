@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Viewer</title>
+<style>
+/* ── Reset & Variables ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --border:   #30363d;
+  --border2:  #21262d;
+  --text:     #e6edf3;
+  --muted:    #8b949e;
+  --blue:     #58a6ff;
+  --green:    #3fb950;
+  --yellow:   #d29922;
+  --red:      #f85149;
+  --purple:   #bc8cff;
+
+  --lvl-debug: #8b949e;
+  --lvl-info:  #58a6ff;
+  --lvl-warn:  #d29922;
+  --lvl-error: #f85149;
+
+  --radius: 6px;
+  --font-mono: 'Menlo', 'Monaco', 'Courier New', monospace;
+  --font-ui: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --sidebar-w: 260px;
+  --drawer-w: 420px;
+  --header-h: 48px;
+}
+
+/* ── Scrollbar ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ────────────────────────────────────────────── */
+header {
+  height: var(--header-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.header-logo {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--blue);
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-logo svg { opacity: 0.8; }
+
+.header-sep { flex: 1; }
+
+.apikey-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.apikey-wrap label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#apiKey {
+  width: 200px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color .15s;
+}
+#apiKey:focus { border-color: var(--blue); }
+
+#statusBadge {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: transparent;
+  transition: all .15s;
+}
+#statusBadge.loading { color: var(--blue); background: rgba(88,166,255,.1); }
+#statusBadge.error   { color: var(--red);  background: rgba(248,81,73,.1);  }
+
+/* ── Main layout ───────────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Sidebar ───────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  padding: 14px 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-section:last-of-type { padding-bottom: 14px; }
+
+.sidebar-divider {
+  border: none;
+  border-top: 1px solid var(--border2);
+  margin: 10px 0 0;
+}
+
+.sidebar-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 600;
+}
+
+/* Level chips */
+.level-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+  letter-spacing: 0.3px;
+}
+.chip:hover { border-color: var(--muted); }
+.chip.active-DEBUG { border-color: var(--lvl-debug); color: var(--lvl-debug); background: rgba(139,148,158,.12); }
+.chip.active-INFO  { border-color: var(--lvl-info);  color: var(--lvl-info);  background: rgba(88,166,255,.12); }
+.chip.active-WARN  { border-color: var(--lvl-warn);  color: var(--lvl-warn);  background: rgba(210,153,34,.12); }
+.chip.active-ERROR { border-color: var(--lvl-error); color: var(--lvl-error); background: rgba(248,81,73,.12);  }
+
+/* Inputs */
+.sb-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color .15s;
+}
+.sb-input:focus { border-color: var(--blue); }
+.sb-input::placeholder { color: var(--muted); }
+
+/* Datetime picker icon styling for dark mode */
+input::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+input::-webkit-calendar-picker-indicator:hover {
+  filter: invert(1);
+}
+
+.datetime-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.datetime-row .sb-input { flex: 1; min-width: 0; font-size: 11px; padding: 5px 8px; }
+
+.preset-row {
+  display: flex;
+  gap: 4px;
+}
+
+.preset-btn {
+  flex: 1;
+  font-size: 10px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+}
+.preset-btn:hover { border-color: var(--muted); color: var(--text); }
+.preset-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,.08); }
+
+/* Sidebar action buttons */
+.sb-btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Time Picker Popup ─────────────────────────────────── */
+.time-picker-container {
+  position: relative;
+}
+
+.time-trigger {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: border-color .15s;
+  text-align: left;
+}
+.time-trigger:hover { border-color: var(--muted); }
+.time-trigger:focus { border-color: var(--blue); outline: none; }
+
+.time-popup {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+}
+.time-popup.show { display: flex; }
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 12px 10px;
+}
+
+.custom-range-box {
+  padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.range-field span { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+
+.btn-primary {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--blue);
+  color: #000;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s;
+  font-family: var(--font-ui);
+}
+.btn-primary:hover { opacity: .85; }
+.btn-primary:disabled { opacity: .4; cursor: default; }
+
+.btn-ghost {
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: var(--font-ui);
+}
+.btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+/* Result summary */
+.result-summary {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.result-summary strong { color: var(--text); }
+
+/* ── Content area ──────────────────────────────────────── */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── Table ─────────────────────────────────────────────── */
+.table-wrap {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+}
+
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
+}
+
+th {
+  text-align: left;
+  padding: 8px 14px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 7px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border2);
+  vertical-align: top;
+}
+
+tbody tr {
+  cursor: pointer;
+  transition: background .1s;
+}
+tbody tr:hover td { background: rgba(255,255,255,.03); }
+tbody tr.selected td { background: rgba(88,166,255,.07); }
+tbody tr.selected:hover td { background: rgba(88,166,255,.1); }
+
+.col-ts  { color: var(--muted); white-space: nowrap; width: 140px; }
+.col-lvl { white-space: nowrap; width: 60px; font-weight: 700; }
+.col-lvl-DEBUG { color: var(--lvl-debug); }
+.col-lvl-INFO  { color: var(--lvl-info); }
+.col-lvl-WARN  { color: var(--lvl-warn); }
+.col-lvl-ERROR { color: var(--lvl-error); }
+
+.col-msg {
+  word-break: break-all;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: baseline;
+}
+
+.kv {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  background: var(--border2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.kv-key { color: var(--muted); font-size: 10px; }
+.kv-val { color: var(--text); }
+
+mark {
+  background: rgba(210,153,34,.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Skeleton loader */
+.skeleton-row td { border-bottom: 1px solid var(--border2); }
+.skel {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border2) 25%, var(--border) 50%, var(--border2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Empty state */
+#emptyState {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  gap: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+#emptyState svg { opacity: .3; }
+#emptyState p { font-size: 13px; }
+#emptyState small { font-size: 11px; }
+
+/* Error banner */
+#errorBanner {
+  display: none;
+  margin: 12px 14px;
+  padding: 10px 14px;
+  background: rgba(248,81,73,.1);
+  border: 1px solid rgba(248,81,73,.35);
+  border-radius: var(--radius);
+  color: var(--red);
+  font-size: 12px;
+}
+
+/* ── Pagination ────────────────────────────────────────── */
+.pagination {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pg-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: var(--font-ui);
+}
+.pg-btn:hover:not(:disabled) { border-color: var(--muted); color: var(--text); }
+.pg-btn:disabled { opacity: .35; cursor: default; }
+
+#pageInfo { font-size: 12px; color: var(--muted); }
+.pg-sep { flex: 1; }
+#totalInfo { font-size: 11px; color: var(--muted); }
+
+/* ── Detail Drawer ─────────────────────────────────────── */
+.drawer {
+  width: var(--drawer-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.drawer.open { display: flex; }
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.drawer-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+.drawer-close {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  transition: all .15s;
+  line-height: 1;
+}
+.drawer-close:hover { background: var(--border2); color: var(--text); }
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.drawer-field label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.ts-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ts-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.ts-row .ts-label { color: var(--muted); font-size: 10px; min-width: 40px; }
+.ts-row .ts-val { color: var(--text); flex: 1; }
+.ts-row .ts-val.relative { color: var(--muted); font-style: italic; }
+.copy-mini {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .1s;
+  flex-shrink: 0;
+}
+.copy-mini:hover { background: var(--border2); color: var(--text); }
+.copy-mini svg { pointer-events: none; }
+
+.lvl-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid;
+}
+.lvl-badge-DEBUG { color: var(--lvl-debug); border-color: var(--lvl-debug); background: rgba(139,148,158,.1); }
+.lvl-badge-INFO  { color: var(--lvl-info);  border-color: var(--lvl-info);  background: rgba(88,166,255,.1); }
+.lvl-badge-WARN  { color: var(--lvl-warn);  border-color: var(--lvl-warn);  background: rgba(210,153,34,.1); }
+.lvl-badge-ERROR { color: var(--lvl-error); border-color: var(--lvl-error); background: rgba(248,81,73,.1); }
+
+.json-pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+/* JSON syntax colors */
+.j-key  { color: var(--blue); }
+.j-str  { color: var(--green); }
+.j-num  { color: var(--purple); }
+.j-bool { color: var(--yellow); }
+.j-null { color: var(--muted); }
+
+.drawer-footer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+
+.btn-copy-all {
+  flex: 1;
+  padding: 7px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: var(--font-ui);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn-copy-all:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── Toast ─────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .2s, transform .2s;
+  pointer-events: none;
+  max-width: 280px;
+}
+#toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Shortcut help modal ───────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  min-width: 300px;
+  max-width: 420px;
+}
+.modal h2 { font-size: 14px; margin-bottom: 14px; color: var(--text); }
+.shortcut-list { display: flex; flex-direction: column; gap: 8px; }
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.shortcut-item kbd {
+  font-family: var(--font-mono);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  color: var(--text);
+  min-width: 28px;
+  text-align: center;
+}
+.shortcut-item span { color: var(--muted); }
+.modal-close-row {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 900px) {
+  :root { --drawer-w: 100vw; }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height .25s ease;
+  }
+  .sidebar.mobile-open { max-height: 600px; }
+
+  .layout { flex-direction: column; }
+  .content { overflow: visible; }
+  .table-wrap { overflow-y: visible; }
+
+  .drawer {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    z-index: 40;
+    border-left: none;
+  }
+
+  #mobileFilterToggle { display: flex; }
+}
+
+#mobileFilterToggle {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: all .15s;
+}
+#mobileFilterToggle:hover { border-color: var(--muted); color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-logo">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y="1" width="12" height="2" rx="1" fill="currentColor"/>
+      <rect x="1" y="5" width="8" height="2" rx="1" fill="currentColor" opacity=".7"/>
+      <rect x="1" y="9" width="10" height="2" rx="1" fill="currentColor" opacity=".5"/>
+      <rect x="1" y="13" width="6" height="2" rx="1" fill="currentColor" opacity=".3"/>
+    </svg>
+    Log Viewer
+  </div>
+  <button id="mobileFilterToggle" onclick="toggleMobileFilter()">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M1 3h10M3 6h6M5 9h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    필터
+  </button>
+  <div class="header-sep"></div>
+  <button class="btn-ghost" style="margin-right:8px; padding:4px 10px; font-size:11px" onclick="showApiGuide()">
+    API 가이드
+  </button>
+  <div class="apikey-wrap">
+    <label for="apiKey">API Key</label>
+    <input type="password" id="apiKey" placeholder="X-API-Key" autocomplete="off">
+  </div>
+  <span id="statusBadge"></span>
+</header>
+
+<div id="authScreen" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" style="margin-bottom:20px; opacity:0.6">
+    <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor"/>
+    <path d="M7 11V7C7 4.23858 9.23858 2 12 2C14.7614 2 17 4.23858 17 7V11" stroke="currentColor" stroke-linecap="round"/>
+    <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/>
+  </svg>
+  <h2 style="font-size:18px; margin-bottom:8px; color:var(--text); font-weight:500">Log Viewer가 잠겨 있습니다</h2>
+  <p style="font-size:13px; color:var(--muted)">우측 상단에 유효한 API Key를 입력하여 잠금을 해제해 주세요.</p>
+</div>
+
+<div class="layout" id="mainLayout" style="display:none;">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <span class="sidebar-label">Level</span>
+      <div class="level-chips">
+        <button class="chip" data-level="DEBUG" onclick="toggleChip(this)">DEBUG</button>
+        <button class="chip" data-level="INFO"  onclick="toggleChip(this)">INFO</button>
+        <button class="chip" data-level="WARN"  onclick="toggleChip(this)">WARN</button>
+        <button class="chip" data-level="ERROR" onclick="toggleChip(this)">ERROR</button>
+      </div>
+    </div>
+
+    <hr class="sidebar-divider">
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">키워드</span>
+      <input class="sb-input" type="text" id="keyword" placeholder="message 검색..." autocomplete="off">
+    </div>
+
+    <hr class="sidebar-divider">
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">시간 범위</span>
+      <div class="time-picker-container">
+        <button class="time-trigger" id="timeTrigger" onclick="toggleTimePopup(event)">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="margin-right:6px;opacity:0.6">
+            <rect x="2" y="3" width="12" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M2 7h12M5 2v2M11 2v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span id="timeRangeText">전체 시간</span>
+        </button>
+        
+        <div class="time-popup" id="timePopup">
+          <div class="sidebar-label" style="padding:10px 12px 6px">빠른 선택</div>
+          <div class="preset-grid">
+            <button class="preset-btn" data-min="15"   onclick="setPreset(this)">15분</button>
+            <button class="preset-btn" data-min="60"   onclick="setPreset(this)">1시간</button>
+            <button class="preset-btn" data-min="1440" onclick="setPreset(this)">24시간</button>
+            <button class="preset-btn" data-min="10080" onclick="setPreset(this)">7일</button>
+          </div>
+          
+          <hr class="sidebar-divider" style="margin:5px 0">
+          
+          <div class="sidebar-label" style="padding:10px 12px 6px">직접 입력</div>
+          <div class="custom-range-box">
+            <div class="range-field">
+              <span>시작</span>
+              <input class="sb-input" type="datetime-local" id="fromDt" onchange="onTimeChange()" onclick="if(this.showPicker)this.showPicker()">
+            </div>
+            <div class="range-field">
+              <span>종료</span>
+              <input class="sb-input" type="datetime-local" id="toDt" onchange="onTimeChange()" onclick="if(this.showPicker)this.showPicker()">
+            </div>
+          </div>
+          <div style="padding:10px 12px; display:flex; gap:6px;">
+            <button class="btn-primary" style="padding:5px 10px; font-size:11px" onclick="applyTimePopup()">적용</button>
+            <button class="btn-ghost" style="padding:5px 10px; font-size:11px" onclick="resetTimePopup()">초기화</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="sidebar-divider">
+
+    <div class="sidebar-section">
+      <div class="sb-btn-row">
+        <button class="btn-primary" id="searchBtn" onclick="search()">조회</button>
+        <button class="btn-ghost" onclick="resetFilters()" title="필터 초기화">↺</button>
+        <button class="btn-ghost" onclick="showHelp()" title="단축키">?</button>
+      </div>
+      <div class="result-summary" id="resultSummary"></div>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <div class="content">
+    <div id="errorBanner"></div>
+    <div class="table-wrap" id="tableWrap">
+      <div id="emptyState">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <rect x="6" y="8"  width="28" height="3" rx="1.5" fill="currentColor"/>
+          <rect x="6" y="15" width="20" height="3" rx="1.5" fill="currentColor"/>
+          <rect x="6" y="22" width="24" height="3" rx="1.5" fill="currentColor"/>
+          <rect x="6" y="29" width="14" height="3" rx="1.5" fill="currentColor"/>
+        </svg>
+        <p>로그가 없습니다</p>
+        <small id="emptyDetail">필터를 조정하거나 초기화해 보세요.</small>
+      </div>
+      <table id="mainTable" style="display:none">
+        <thead>
+          <tr>
+            <th style="width:140px">Timestamp</th>
+            <th style="width:64px">Level</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="pg-btn" id="prevBtn" onclick="goPage(-1)">← 이전</button>
+      <span id="pageInfo">-</span>
+      <div class="pg-sep"></div>
+      <span id="totalInfo"></span>
+      <button class="pg-btn" id="nextBtn" onclick="goPage(1)">다음 →</button>
+    </div>
+  </div>
+
+  <!-- Detail Drawer -->
+  <aside class="drawer" id="drawer">
+    <div class="drawer-header">
+      <span class="drawer-title">상세 보기</span>
+      <button class="drawer-close" onclick="closeDrawer()" title="닫기 (Esc)">×</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+    <div class="drawer-footer">
+      <button class="btn-copy-all" onclick="copyAll()">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M3 9H2a1 1 0 01-1-1V2a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+        전체 복사
+      </button>
+    </div>
+  </aside>
+
+</div>
+
+<!-- API Guide modal -->
+<div class="modal-overlay" id="apiModal" onclick="if(event.target===this)closeApiGuide()">
+  <div class="modal" style="max-width: 550px; width: 95%;">
+    <h2>🚀 로그 전송 API 가이드</h2>
+    <div class="drawer-body" style="padding:0; gap:16px; max-height:75vh; overflow-y:auto">
+      
+      <div class="json-pre" style="margin:0; border-color:var(--blue)">
+<span class="j-key">POST</span> /api/logs
+<span class="j-key">Header:</span> X-API-Key: &lt;your-key&gt;
+<span class="j-key">Content-Type:</span> application/json
+
+<span class="j-key">Body:</span> {
+  <span class="j-key">"level"</span>: <span class="j-str">"INFO"</span>,
+  <span class="j-key">"message"</span>: { 
+    <span class="j-key">"timestamp"</span>: <span class="j-num">1713682800000</span>,
+    <span class="j-key">"event"</span>: <span class="j-str">"user_action"</span>,
+    <span class="j-key">"data"</span>: <span class="j-str">"click"</span>
+  }
+}</div>
+
+      <section>
+        <h3 style="font-size:13px; color:var(--blue); margin-bottom:8px">⏱ 타임스탬프 처리</h3>
+        <p style="font-size:12px; color:var(--text); line-height:1.6">
+          - <code>message</code> 내부에 <code>timestamp</code> 필드가 있으면 해당 시간을 로그 시간으로 사용합니다.<br>
+          - <strong>지원 형식:</strong> Unix ms (숫자), RFC3339 문자열 등<br>
+          - 필드가 없으면 서버 수신 시간이 자동 적용됩니다.
+        </p>
+      </section>
+
+      <section>
+        <h3 style="font-size:13px; color:var(--red); margin-bottom:8px">⚠️ 주요 실패 케이스</h3>
+        <ul style="font-size:12px; color:var(--muted); list-style:none; display:flex; flex-direction:column; gap:4px">
+          <li>• <strong>401 Unauthorized:</strong> X-API-Key가 누락되었거나 일치하지 않음</li>
+          <li>• <strong>400 Bad Request:</strong> message가 JSON 객체({...})가 아님</li>
+          <li>• <strong>400 Bad Request:</strong> 정의되지 않은 level (DEBUG/INFO/WARN/ERROR)</li>
+          <li>• <strong>413 Payload Too Large:</strong> 단일 로그 크기가 64KB를 초과함</li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="modal-close-row">
+      <button class="btn-primary" style="padding:6px 16px" onclick="closeApiGuide()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- Shortcut help modal -->
+<div class="modal-overlay" id="helpModal" onclick="if(event.target===this)closeHelp()">
+  <div class="modal">
+    <h2>⌨ 단축키</h2>
+    <div class="shortcut-list">
+      <div class="shortcut-item"><kbd>/</kbd><span>키워드 입력 포커스</span></div>
+      <div class="shortcut-item"><kbd>j</kbd><span>다음 행 선택</span></div>
+      <div class="shortcut-item"><kbd>k</kbd><span>이전 행 선택</span></div>
+      <div class="shortcut-item"><kbd>Esc</kbd><span>Drawer 닫기 / 포커스 해제</span></div>
+      <div class="shortcut-item"><kbd>?</kbd><span>이 도움말</span></div>
+      <div class="shortcut-item"><kbd>Enter</kbd><span>조회 실행</span></div>
+    </div>
+    <div class="modal-close-row">
+      <button class="btn-ghost" onclick="closeHelp()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+(() => {
+  const path = window.location.pathname;
+  const base = !path || path === '/' ? '' : path.replace(/\/$/, '');
+  const script = document.createElement('script');
+  script.src = base + '/static/app.js';
+  document.currentScript.replaceWith(script);
+})();
+</script>
+</body>
+</html>

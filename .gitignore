@@ -1,0 +1,11 @@
+# Build output
+log-system
+*.zip
+
+# Runtime data
+*.jsonl
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+.env

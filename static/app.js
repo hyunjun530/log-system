@@ -12,6 +12,7 @@ let selectedRow = -1; // index in current items
 let currentItems = [];
 let hasMore = false;
 let debounceTimer = null;
+let apiKeyTimer = null;
 let activePreset = null;
 
 /* ── Init ───────────────────────────────────────────────── */
@@ -19,14 +20,22 @@ window.addEventListener('DOMContentLoaded', () => {
   const saved = sessionStorage.getItem(SS_KEY);
   if (saved) document.getElementById('apiKey').value = saved;
 
-  document.getElementById('apiKey').addEventListener('change', e => {
+  document.getElementById('apiKey').addEventListener('input', e => {
     const key = e.target.value.trim();
     sessionStorage.setItem(SS_KEY, key);
-    if (key) search(); // Trigger search to unlock UI
+    clearTimeout(apiKeyTimer);
+    if (!key) {
+      toggleLayout(false);
+      return;
+    }
+    apiKeyTimer = setTimeout(search, 350);
   });
 
   document.getElementById('apiKey').addEventListener('keydown', e => {
-    if (e.key === 'Enter') search();
+    if (e.key === 'Enter') {
+      clearTimeout(apiKeyTimer);
+      search();
+    }
   });
 
   document.getElementById('keyword').addEventListener('input', () => {

@@ -812,10 +812,10 @@ mark {
   </svg>
   <h2 style="font-size:18px; margin-bottom:8px; color:var(--text); font-weight:500">Log Viewer가 잠겨 있습니다</h2>
   <p style="font-size:13px; color:var(--muted)">유효한 API Key를 입력하여 잠금을 해제해 주세요.</p>
-  <div class="auth-card">
+  <form class="auth-card" onsubmit="search(); return false;">
     <input type="password" id="authApiKey" data-api-key-input placeholder="API Key" autocomplete="off">
-    <button class="btn-primary" onclick="search()">잠금 해제</button>
-  </div>
+    <button class="btn-primary" type="submit">잠금 해제</button>
+  </form>
 </div>
 
 <div class="layout" id="mainLayout" style="display:none;">

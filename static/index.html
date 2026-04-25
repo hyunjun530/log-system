@@ -95,33 +95,6 @@ header {
 
 .header-sep { flex: 1; }
 
-.apikey-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.apikey-wrap label {
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-#apiKey {
-  width: 200px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 5px 10px;
-  border-radius: var(--radius);
-  font-size: 12px;
-  font-family: var(--font-mono);
-  outline: none;
-  transition: border-color .15s;
-}
-#apiKey:focus { border-color: var(--blue); }
-
 .auth-card {
   display: flex;
   flex-direction: column;
@@ -828,10 +801,6 @@ mark {
   <button class="btn-ghost" style="margin-right:8px; padding:4px 10px; font-size:11px" onclick="showApiGuide()">
     API 가이드
   </button>
-  <div class="apikey-wrap">
-    <label for="apiKey">API Key</label>
-    <input type="password" id="apiKey" data-api-key-input placeholder="X-API-Key" autocomplete="off">
-  </div>
   <span id="statusBadge"></span>
 </header>
 
@@ -842,7 +811,7 @@ mark {
     <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/>
   </svg>
   <h2 style="font-size:18px; margin-bottom:8px; color:var(--text); font-weight:500">Log Viewer가 잠겨 있습니다</h2>
-  <p style="font-size:13px; color:var(--muted)">우측 상단에 유효한 API Key를 입력하여 잠금을 해제해 주세요.</p>
+  <p style="font-size:13px; color:var(--muted)">유효한 API Key를 입력하여 잠금을 해제해 주세요.</p>
   <div class="auth-card">
     <input type="password" id="authApiKey" data-api-key-input placeholder="API Key" autocomplete="off">
     <button class="btn-primary" onclick="search()">잠금 해제</button>

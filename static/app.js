@@ -16,7 +16,6 @@ let selectedRow = -1; // index in current items
 let currentItems = [];
 let hasMore = false;
 let debounceTimer = null;
-let apiKeyTimer = null;
 let activePreset = null;
 let inFlightController = null;
 let inFlightTimeout = null;
@@ -35,20 +34,16 @@ function initApp() {
       const key = e.target.value.trim();
       syncKeyInputs(key, e.target);
       hideAuthError();
-      clearTimeout(apiKeyTimer);
       if (!key) {
         clearStoredKey();
         cancelInFlightRequest();
         toggleLayout(false);
         return;
       }
-      writeStoredKey(key);
-      apiKeyTimer = setTimeout(search, 350);
     });
 
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
-        clearTimeout(apiKeyTimer);
         search();
       }
     });

@@ -17,6 +17,8 @@ import (
 //go:embed static
 var staticFS embed.FS
 
+const appVersion = "20260426-9"
+
 func main() {
 	key := os.Getenv("LOG_API_KEY")
 	if key == "" {
@@ -85,8 +87,8 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("log-system listening on %s (log file: %s, max %dB, retain %d)",
-			addr, logPath, store.maxBytes, store.retain)
+		log.Printf("server start addr=%s version=%s log_file=%s max_bytes=%d retain=%d",
+			addr, appVersion, logPath, store.maxBytes, store.retain)
 		errCh <- srv.ListenAndServe()
 	}()
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,10 +118,14 @@ func postLogs(store *Store) http.Handler {
 		}
 
 		if err := store.Append(ts, req.Level, compactMsg); err != nil {
+			log.Printf("log append failed ip=%s path=%s level=%s message_bytes=%d err=%v",
+				clientIP(r), r.URL.Path, req.Level, len(compactMsg), err)
 			writeJSONError(w, http.StatusInternalServerError, "failed to write log")
 			return
 		}
 
+		log.Printf("log accepted ip=%s path=%s level=%s timestamp=%d message_bytes=%d",
+			clientIP(r), r.URL.Path, req.Level, ts, len(compactMsg))
 		writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
 	})
 }
@@ -196,14 +201,28 @@ func getLogs(store *Store) http.Handler {
 		}
 
 		result := store.Query(levels, keyword, from, to, page, size)
+		log.Printf("log query ip=%s page=%d size=%d levels=%d keyword=%t from=%t to=%t total=%d items=%d",
+			clientIP(r), page, size, len(levels), keyword != "", !from.IsZero(), !to.IsZero(),
+			result.Total, len(result.Items))
 		writeJSON(w, http.StatusOK, result)
 	})
 }
 
 func streamLogs(store *Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ip := clientIP(r)
+		events := 0
+		heartbeats := 0
+		log.Printf("stream start ip=%s path=%s", ip, r.URL.Path)
+		defer func() {
+			log.Printf("stream end ip=%s path=%s duration=%s events=%d heartbeats=%d",
+				ip, r.URL.Path, time.Since(start), events, heartbeats)
+		}()
+
 		flusher, ok := w.(http.Flusher)
 		if !ok {
+			log.Printf("stream unsupported ip=%s path=%s", ip, r.URL.Path)
 			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 			return
 		}
@@ -220,7 +239,10 @@ func streamLogs(store *Store) http.Handler {
 		defer store.Unsubscribe(ch)
 
 		// Send initial keep-alive comment
-		fmt.Fprintf(w, ": ok\n\n")
+		if _, err := fmt.Fprintf(w, ": ok\n\n"); err != nil {
+			log.Printf("stream initial write failed ip=%s path=%s err=%v", ip, r.URL.Path, err)
+			return
+		}
 		flusher.Flush()
 
 		ticker := time.NewTicker(25 * time.Second)
@@ -229,10 +251,18 @@ func streamLogs(store *Store) http.Handler {
 		for {
 			select {
 			case data := <-ch:
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+					log.Printf("stream event write failed ip=%s path=%s err=%v", ip, r.URL.Path, err)
+					return
+				}
+				events++
 				flusher.Flush()
 			case <-ticker.C:
-				fmt.Fprintf(w, ": ping\n\n")
+				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
+					log.Printf("stream heartbeat write failed ip=%s path=%s err=%v", ip, r.URL.Path, err)
+					return
+				}
+				heartbeats++
 				flusher.Flush()
 			case <-r.Context().Done():
 				return

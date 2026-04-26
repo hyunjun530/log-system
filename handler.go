@@ -220,10 +220,16 @@ func streamLogs(store *Store) http.Handler {
 		fmt.Fprintf(w, ": ok\n\n")
 		flusher.Flush()
 
+		ticker := time.NewTicker(25 * time.Second)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case data := <-ch:
 				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			case <-ticker.C:
+				fmt.Fprintf(w, ": ping\n\n")
 				flusher.Flush()
 			case <-r.Context().Done():
 				return

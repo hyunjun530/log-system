@@ -4,6 +4,8 @@
 const SS_KEY = 'log_api_key';
 const PAGE_SIZE = 50;
 const APP_BASE_PATH = getAppBasePath();
+const FETCH_TIMEOUT_MS = 15000;
+const STREAM_RETRY_MS = 3000;
 
 /* ── State ──────────────────────────────────────────────── */
 let currentPage = 1;
@@ -19,23 +21,26 @@ let inFlightTimeout = null;
 let modalReturnFocus = null;
 let modalTrapHandler = null;
 let streamController = null;
-const FETCH_TIMEOUT_MS = 15000;
+let streamReconnectTimer = null;
 
 /* ── Init ───────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
-  const saved = sessionStorage.getItem(SS_KEY);
+  const saved = sessionStorage.getItem(SS_KEY) || '';
   keyInputs().forEach(input => {
     if (saved) input.value = saved;
 
     input.addEventListener('input', e => {
       const key = e.target.value.trim();
       syncKeyInputs(key, e.target);
-      sessionStorage.setItem(SS_KEY, key);
+      hideAuthError();
       clearTimeout(apiKeyTimer);
       if (!key) {
+        sessionStorage.removeItem(SS_KEY);
+        cancelInFlightRequest();
         toggleLayout(false);
         return;
       }
+      sessionStorage.setItem(SS_KEY, key);
       apiKeyTimer = setTimeout(search, 350);
     });
 
@@ -82,6 +87,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
   restoreFromURL();
   setupKeyboard();
+  if (saved) {
+    toggleLayout(true);
+    setStatus('loading', '저장된 키 확인 중…');
+  }
   search();
 });
 
@@ -123,6 +132,17 @@ function syncKeyInputs(key, source) {
   keyInputs().forEach(input => {
     if (input !== source) input.value = key;
   });
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('authError');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function hideAuthError() {
+  showAuthError('');
 }
 
 function apiKey() {
@@ -293,6 +313,10 @@ function cancelInFlightRequest() {
 }
 
 function stopStreaming() {
+  if (streamReconnectTimer) {
+    clearTimeout(streamReconnectTimer);
+    streamReconnectTimer = null;
+  }
   if (streamController) {
     streamController.abort();
     streamController = null;
@@ -306,13 +330,17 @@ async function startStreaming() {
 
   const controller = new AbortController();
   streamController = controller;
+  let shouldReconnect = false;
 
   try {
     const res = await fetch(appPath('/api/logs/stream'), {
       headers: { 'X-API-Key': key },
       signal: controller.signal,
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      shouldReconnect = res.status !== 401;
+      return;
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -320,7 +348,10 @@ async function startStreaming() {
 
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) {
+        shouldReconnect = true;
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n\n');
@@ -336,8 +367,16 @@ async function startStreaming() {
       }
     }
   } catch (e) {
-    if (e.name !== 'AbortError') {
-      setTimeout(startStreaming, 3000); // retry after 3s
+    if (e.name !== 'AbortError') shouldReconnect = true;
+  } finally {
+    if (controller === streamController) {
+      streamController = null;
+      if (shouldReconnect && apiKey()) {
+        streamReconnectTimer = setTimeout(() => {
+          streamReconnectTimer = null;
+          startStreaming();
+        }, STREAM_RETRY_MS);
+      }
     }
   }
 }
@@ -416,9 +455,11 @@ async function fetchLogs() {
     return;
   }
 
+  toggleLayout(true);
   btn.disabled = true;
   setStatus('loading', '조회 중…');
   hideError();
+  hideAuthError();
 
   const params = new URLSearchParams({ page: currentPage, size: PAGE_SIZE });
   if (level) params.set('level', level);
@@ -442,7 +483,8 @@ async function fetchLogs() {
     if (controller !== inFlightController) return;
 
     if (res.status === 401) {
-      showError('401 인증 실패 — API Key를 확인하세요.');
+      sessionStorage.removeItem(SS_KEY);
+      showAuthError('API Key가 유효하지 않습니다. 다시 입력해 주세요.');
       toggleLayout(false);
       renderEmpty('not-authed');
       setStatus('error', '인증 오류');

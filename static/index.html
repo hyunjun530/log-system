@@ -117,6 +117,20 @@ header {
 }
 #authApiKey:focus { border-color: var(--blue); }
 
+#authError {
+  display: none;
+  width: min(360px, calc(100vw - 40px));
+  margin-top: 14px;
+  color: var(--red);
+  background: rgba(248,81,73,.1);
+  border: 1px solid rgba(248,81,73,.22);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .auth-card .btn-primary {
   flex: none;
   width: 100%;
@@ -830,6 +844,7 @@ mark {
   </svg>
   <h2 style="font-size:18px; margin-bottom:8px; color:var(--text); font-weight:500">Log Viewer가 잠겨 있습니다</h2>
   <p style="font-size:13px; color:var(--muted)">유효한 API Key를 입력하여 잠금을 해제해 주세요.</p>
+  <div id="authError"></div>
   <form class="auth-card" onsubmit="search(); return false;">
     <input type="password" id="authApiKey" data-api-key-input placeholder="API Key" autocomplete="off">
     <button class="btn-primary" type="submit">잠금 해제</button>
@@ -1038,7 +1053,7 @@ mark {
   const path = window.location.pathname;
   const base = !path || path === '/' ? '' : path.replace(/\/$/, '');
   const script = document.createElement('script');
-  script.src = base + '/static/app.js?v=20260426-3';
+  script.src = base + '/static/app.js?v=20260426-4';
   document.currentScript.replaceWith(script);
 })();
 </script>

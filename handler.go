@@ -209,9 +209,12 @@ func streamLogs(store *Store) http.Handler {
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+		rc := http.NewResponseController(w)
+		_ = rc.SetWriteDeadline(time.Time{})
 
 		ch := store.Subscribe()
 		defer store.Unsubscribe(ch)

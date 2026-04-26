@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -65,9 +66,13 @@ func postLogs(store *Store) http.Handler {
 			writeJSONError(w, http.StatusBadRequest, "message exceeds 64KB limit")
 			return
 		}
-		// message must be a JSON object
+		// message must be a JSON object. UseNumber preserves int64 precision
+		// for the optional `timestamp` field — without it, large millisecond
+		// values are decoded as float64 and silently lose precision.
+		dec := json.NewDecoder(bytes.NewReader(req.Message))
+		dec.UseNumber()
 		var msgObj map[string]any
-		if err := json.Unmarshal(req.Message, &msgObj); err != nil {
+		if err := dec.Decode(&msgObj); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "message must be a JSON object")
 			return
 		}
@@ -76,18 +81,29 @@ func postLogs(store *Store) http.Handler {
 		ts := time.Now().UnixMilli()
 		if rawTs, ok := msgObj["timestamp"]; ok {
 			switch v := rawTs.(type) {
-			case float64:
-				ts = int64(v)
+			case json.Number:
+				n, err := v.Int64()
+				if err != nil {
+					writeJSONError(w, http.StatusBadRequest, "timestamp number must be integer milliseconds")
+					return
+				}
+				ts = n
 			case string:
-				// Try RFC3339 first
 				if t, err := time.Parse(time.RFC3339, v); err == nil {
 					ts = t.UnixMilli()
 				} else if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
 					ts = t.UnixMilli()
 				} else if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-					// Fallback to numeric string
 					ts = n
+				} else {
+					writeJSONError(w, http.StatusBadRequest, "timestamp string must be RFC3339 or integer ms")
+					return
 				}
+			case nil:
+				// explicit null — keep server-set timestamp
+			default:
+				writeJSONError(w, http.StatusBadRequest, "timestamp must be a number or RFC3339 string")
+				return
 			}
 			delete(msgObj, "timestamp")
 		}
@@ -143,6 +159,10 @@ func getLogs(store *Store) http.Handler {
 				return
 			}
 			to = t
+		}
+		if !from.IsZero() && !to.IsZero() && from.After(to) {
+			writeJSONError(w, http.StatusBadRequest, "from must be <= to")
+			return
 		}
 
 		keyword := q.Get("q")

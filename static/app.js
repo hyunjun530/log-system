@@ -14,6 +14,11 @@ let hasMore = false;
 let debounceTimer = null;
 let apiKeyTimer = null;
 let activePreset = null;
+let inFlightController = null;
+let inFlightTimeout = null;
+let modalReturnFocus = null;
+let modalTrapHandler = null;
+const FETCH_TIMEOUT_MS = 15000;
 
 /* ── Init ───────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
@@ -57,6 +62,21 @@ window.addEventListener('DOMContentLoaded', () => {
     if (popup && trigger && !popup.contains(e.target) && !trigger.contains(e.target)) {
       popup.classList.remove('show');
     }
+  });
+
+  // Delegated click on drawer copy buttons (data-copy attribute carries the
+  // raw text — no inline onclick injection of user-controlled values).
+  document.getElementById('drawer').addEventListener('click', e => {
+    const btn = e.target.closest('.copy-mini');
+    if (btn && btn.dataset.copy !== undefined) {
+      copyText(btn.dataset.copy);
+    }
+  });
+
+  // Delegated click on table rows (data-idx attribute carries the row index).
+  document.getElementById('tbody').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-idx]');
+    if (tr) selectRow(parseInt(tr.dataset.idx, 10));
   });
 
   restoreFromURL();
@@ -263,6 +283,13 @@ function search() { currentPage = 1; fetchLogs(); }
 function goPage(delta) { currentPage = Math.max(1, currentPage + delta); fetchLogs(); }
 
 /* ── Fetch ───────────────────────────────────────────────── */
+function cancelInFlightRequest() {
+  if (inFlightController) inFlightController.abort();
+  if (inFlightTimeout) clearTimeout(inFlightTimeout);
+  inFlightController = null;
+  inFlightTimeout = null;
+}
+
 async function fetchLogs() {
   const key   = apiKey();
   const level = [...selectedLevels].join(',');
@@ -272,7 +299,11 @@ async function fetchLogs() {
   const btn   = document.getElementById('searchBtn');
 
   if (!key) {
+    cancelInFlightRequest();
+    btn.disabled = false;
     toggleLayout(false);
+    renderEmpty('not-authed');
+    setStatus('', '');
     return;
   }
 
@@ -288,36 +319,66 @@ async function fetchLogs() {
 
   showSkeleton();
 
+  // Cancel any in-flight request and arm a 15s timeout.
+  cancelInFlightRequest();
+  const controller = new AbortController();
+  inFlightController = controller;
+  inFlightTimeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   try {
-    const res = await fetch(appPath('/api/logs') + '?' + params, { headers: { 'X-API-Key': key } });
+    const res = await fetch(appPath('/api/logs') + '?' + params, {
+      headers: { 'X-API-Key': key },
+      signal: controller.signal,
+    });
+    if (controller !== inFlightController) return;
 
     if (res.status === 401) {
       showError('401 인증 실패 — API Key를 확인하세요.');
-      toggleLayout(false); // Hide UI on auth failure
-      renderEmpty(q, level);
+      toggleLayout(false);
+      renderEmpty('not-authed');
       setStatus('error', '인증 오류');
+      return;
+    }
+    if (res.status === 429) {
+      const retry = res.headers.get('Retry-After');
+      showError(`요청이 너무 많습니다. ${retry ? retry + '초 후' : '잠시 후'} 다시 시도하세요.`);
+      renderEmpty('error', '잠금 상태 — 잠시 후 재시도');
+      setStatus('error', '제한됨');
       return;
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      showError(`오류: ${body.error || res.statusText}`);
-      renderEmpty(q, level);
+      const detail = body.error || res.statusText;
+      showError(`오류: ${detail}`);
+      renderEmpty('error', detail);
       setStatus('error', '오류');
       return;
     }
 
     const data = await res.json();
-    toggleLayout(true); // Show UI on success
+    if (controller !== inFlightController) return;
+    toggleLayout(true);
     sessionStorage.setItem(SS_KEY, key);
     renderTable(data, q);
     setStatus('', '');
     pushURL();
   } catch (err) {
-    showError('네트워크 오류: ' + err.message);
-    renderEmpty(q, level);
+    // Aborted by a newer request: stay quiet, the new one is in flight.
+    if (controller !== inFlightController) {
+      return;
+    }
+    const isTimeout = err && err.name === 'AbortError';
+    const detail = isTimeout ? '요청 시간 초과' : ('네트워크 오류: ' + (err && err.message || ''));
+    showError(detail);
+    renderEmpty('error', detail);
     setStatus('error', '오류');
   } finally {
-    btn.disabled = false;
+    if (controller === inFlightController) {
+      clearTimeout(inFlightTimeout);
+      inFlightTimeout = null;
+      inFlightController = null;
+      btn.disabled = false;
+    }
   }
 }
 
@@ -353,7 +414,7 @@ function renderTable(data, q) {
     empty.style.display  = 'none';
     table.style.display  = '';
     tbody.innerHTML = currentItems.map((e, i) => `
-      <tr data-idx="${i}" onclick="selectRow(${i})">
+      <tr data-idx="${i}">
         <td class="col-ts" title="${new Date(e.timestamp).toISOString()}">${formatTs(e.timestamp)}</td>
         <td class="col-lvl col-lvl-${escHtml(e.level)}">${escHtml(e.level)}</td>
         <td class="col-msg">${renderMessage(e.message, q)}</td>
@@ -376,12 +437,25 @@ function renderTable(data, q) {
   selectedRow = -1;
 }
 
-function renderEmpty(q, level) {
+function renderEmpty(reason, detail) {
   currentItems = [];
   document.getElementById('mainTable').style.display = 'none';
   const empty = document.getElementById('emptyState');
   empty.style.display = 'flex';
-  document.getElementById('emptyDetail').textContent = buildActiveFiltersText() || '';
+  let text;
+  switch (reason) {
+    case 'not-authed':
+      text = 'API Key를 입력하면 로그가 조회됩니다.';
+      break;
+    case 'error':
+      text = detail ? '요청 실패 — ' + detail : '요청에 실패했습니다.';
+      break;
+    case 'no-results':
+    default:
+      text = buildActiveFiltersText() || '';
+      break;
+  }
+  document.getElementById('emptyDetail').textContent = text;
   document.getElementById('tbody').innerHTML = '';
   document.getElementById('pageInfo').textContent  = '-';
   document.getElementById('totalInfo').textContent = '';
@@ -476,11 +550,14 @@ function selectRow(idx) {
 function openDrawer(entry) {
   const drawer = document.getElementById('drawer');
   drawer.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
   renderDrawer(entry);
 }
 
 function closeDrawer() {
-  document.getElementById('drawer').classList.remove('open');
+  const drawer = document.getElementById('drawer');
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
   document.querySelectorAll('#tbody tr').forEach(tr => tr.classList.remove('selected'));
   selectedRow = -1;
 }
@@ -537,9 +614,13 @@ function renderDrawer(entry) {
 }
 
 function copyMiniBtn(text, title) {
-  const safe = escHtml(text).replace(/"/g, '&quot;');
-  return `<button class="copy-mini" onclick="copyText('${safe}')" title="${escHtml(title)}">
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+  // escHtml escapes &, <, >, ". The data-copy attribute round-trips the raw
+  // value via dataset, so single quotes/backticks in the source are safe —
+  // they're never re-emitted into JS source.
+  const safeAttr = escHtml(String(text));
+  const safeTitle = escHtml(title);
+  return `<button class="copy-mini" data-copy="${safeAttr}" title="${safeTitle}" aria-label="${safeTitle}">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
       <path d="M2.5 8.5H2a1 1 0 01-1-1V2a1 1 0 011-1h5.5a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2"/>
     </svg>
@@ -621,13 +702,55 @@ function showToast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
 }
 
-/* ── Help modal ──────────────────────────────────────────── */
-function showHelp()  { document.getElementById('helpModal').classList.add('open'); }
-function closeHelp() { document.getElementById('helpModal').classList.remove('open'); }
+/* ── Modal helpers (focus trap + return focus) ───────────── */
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modalReturnFocus = document.activeElement;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  const focusables = modalFocusables(modal);
+  if (focusables.length) focusables[0].focus();
+  if (modalTrapHandler) document.removeEventListener('keydown', modalTrapHandler, true);
+  modalTrapHandler = e => {
+    if (e.key !== 'Tab') return;
+    if (!modal.classList.contains('open')) return;
+    const list = modalFocusables(modal);
+    if (!list.length) return;
+    const first = list[0], last = list[list.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  };
+  document.addEventListener('keydown', modalTrapHandler, true);
+}
 
-/* ── API Guide modal ─────────────────────────────────────── */
-function showApiGuide()  { document.getElementById('apiModal').classList.add('open'); }
-function closeApiGuide() { document.getElementById('apiModal').classList.remove('open'); }
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  if (modalTrapHandler) {
+    document.removeEventListener('keydown', modalTrapHandler, true);
+    modalTrapHandler = null;
+  }
+  if (modalReturnFocus && typeof modalReturnFocus.focus === 'function') {
+    modalReturnFocus.focus();
+  }
+  modalReturnFocus = null;
+}
+
+function modalFocusables(root) {
+  return [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+}
+
+function showHelp()  { openModal('helpModal'); }
+function closeHelp() { closeModal('helpModal'); }
+function showApiGuide()  { openModal('apiModal'); }
+function closeApiGuide() { closeModal('apiModal'); }
 
 /* ── Mobile filter toggle ────────────────────────────────── */
 function toggleMobileFilter() {

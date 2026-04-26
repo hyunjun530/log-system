@@ -556,6 +556,24 @@ mark {
 }
 .drawer-close:hover { background: var(--border2); color: var(--text); }
 
+/* ── Keyboard focus indicators ─────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.chip:focus-visible,
+.preset-btn:focus-visible,
+.btn-ghost:focus-visible,
+.pg-btn:focus-visible,
+.copy-mini:focus-visible,
+.drawer-close:focus-visible,
+.btn-copy-all:focus-visible,
+.time-trigger:focus-visible,
+#mobileFilterToggle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 .drawer-body {
   flex: 1;
   overflow-y: auto;
@@ -791,8 +809,8 @@ mark {
     </svg>
     Log Viewer
   </div>
-  <button id="mobileFilterToggle" onclick="toggleMobileFilter()">
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+  <button id="mobileFilterToggle" onclick="toggleMobileFilter()" aria-label="필터 표시 토글">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M1 3h10M3 6h6M5 9h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
     필터
@@ -887,8 +905,8 @@ mark {
     <div class="sidebar-section">
       <div class="sb-btn-row">
         <button class="btn-primary" id="searchBtn" onclick="search()">조회</button>
-        <button class="btn-ghost" onclick="resetFilters()" title="필터 초기화">↺</button>
-        <button class="btn-ghost" onclick="showHelp()" title="단축키">?</button>
+        <button class="btn-ghost" onclick="resetFilters()" title="필터 초기화" aria-label="필터 초기화">↺</button>
+        <button class="btn-ghost" onclick="showHelp()" title="단축키" aria-label="단축키 도움말">?</button>
       </div>
       <div class="result-summary" id="resultSummary"></div>
     </div>
@@ -929,10 +947,10 @@ mark {
   </div>
 
   <!-- Detail Drawer -->
-  <aside class="drawer" id="drawer">
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="drawerTitle" aria-hidden="true">
     <div class="drawer-header">
-      <span class="drawer-title">상세 보기</span>
-      <button class="drawer-close" onclick="closeDrawer()" title="닫기 (Esc)">×</button>
+      <span class="drawer-title" id="drawerTitle">상세 보기</span>
+      <button class="drawer-close" onclick="closeDrawer()" title="닫기 (Esc)" aria-label="상세 패널 닫기">×</button>
     </div>
     <div class="drawer-body" id="drawerBody"></div>
     <div class="drawer-footer">
@@ -949,9 +967,9 @@ mark {
 </div>
 
 <!-- API Guide modal -->
-<div class="modal-overlay" id="apiModal" onclick="if(event.target===this)closeApiGuide()">
+<div class="modal-overlay" id="apiModal" role="dialog" aria-modal="true" aria-labelledby="apiModalTitle" aria-hidden="true" onclick="if(event.target===this)closeApiGuide()">
   <div class="modal" style="max-width: 550px; width: 95%;">
-    <h2>🚀 로그 전송 API 가이드</h2>
+    <h2 id="apiModalTitle">🚀 로그 전송 API 가이드</h2>
     <div class="drawer-body" style="padding:0; gap:16px; max-height:75vh; overflow-y:auto">
       
       <div class="json-pre" style="margin:0; border-color:var(--blue)">
@@ -995,9 +1013,9 @@ mark {
 </div>
 
 <!-- Shortcut help modal -->
-<div class="modal-overlay" id="helpModal" onclick="if(event.target===this)closeHelp()">
+<div class="modal-overlay" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle" aria-hidden="true" onclick="if(event.target===this)closeHelp()">
   <div class="modal">
-    <h2>⌨ 단축키</h2>
+    <h2 id="helpModalTitle">⌨ 단축키</h2>
     <div class="shortcut-list">
       <div class="shortcut-item"><kbd>/</kbd><span>키워드 입력 포커스</span></div>
       <div class="shortcut-item"><kbd>j</kbd><span>다음 행 선택</span></div>
@@ -1020,7 +1038,7 @@ mark {
   const path = window.location.pathname;
   const base = !path || path === '/' ? '' : path.replace(/\/$/, '');
   const script = document.createElement('script');
-  script.src = base + '/static/app.js?v=20260426-2';
+  script.src = base + '/static/app.js?v=20260426-3';
   document.currentScript.replaceWith(script);
 })();
 </script>

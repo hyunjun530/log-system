@@ -58,6 +58,7 @@ func main() {
 	go lim.runGC(ctx, 5*time.Minute)
 
 	mux := http.NewServeMux()
+	mux.Handle("POST /input", apiKeyMiddleware(key, lim, postLogs(store)))
 	mux.Handle("POST /api/logs", apiKeyMiddleware(key, lim, postLogs(store)))
 	mux.Handle("GET /api/logs", apiKeyMiddleware(key, lim, getLogs(store)))
 	mux.Handle("GET /api/logs/stream", apiKeyMiddleware(key, lim, streamLogs(store)))

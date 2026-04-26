@@ -1062,9 +1062,25 @@ mark {
 
 <script>
 (() => {
-  const appVersion = '20260426-8';
+  const appVersion = '20260426-9';
   const versionEl = document.getElementById('appVersion');
   if (versionEl) versionEl.textContent = 'v' + appVersion;
+  window.__logAppScriptLoaded = false;
+  window.__logAppReady = false;
+  const showBootError = message => {
+    const statusBadge = document.getElementById('statusBadge');
+    const errorBanner = document.getElementById('errorBanner');
+    const mainLayout = document.getElementById('mainLayout');
+    if (mainLayout) mainLayout.style.display = 'flex';
+    if (statusBadge) {
+      statusBadge.textContent = '초기화 오류';
+      statusBadge.className = 'statusBadge error';
+    }
+    if (errorBanner) {
+      errorBanner.textContent = message;
+      errorBanner.style.display = '';
+    }
+  };
   try {
     const savedKey = (sessionStorage.getItem('log_api_key') || '').trim();
     if (savedKey) {
@@ -1085,7 +1101,16 @@ mark {
   const base = !path || path === '/' ? '' : path.replace(/\/$/, '');
   const script = document.createElement('script');
   script.src = base + '/static/app.js?v=' + appVersion;
+  script.onerror = () => showBootError('app.js를 불러오지 못했습니다. 배포 경로와 정적 파일 라우팅을 확인하세요.');
   document.currentScript.replaceWith(script);
+  setTimeout(() => {
+    if (!window.__logAppReady) {
+      const detail = window.__logAppScriptLoaded
+        ? 'app.js는 로드됐지만 초기화가 완료되지 않았습니다. 콘솔 오류를 확인하세요.'
+        : 'app.js 로드가 완료되지 않았습니다. Network 탭에서 app.js 요청 상태를 확인하세요.';
+      showBootError(detail);
+    }
+  }, 5000);
 })();
 </script>
 </body>

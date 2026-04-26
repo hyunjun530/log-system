@@ -1,5 +1,7 @@
 'use strict';
 
+window.__logAppScriptLoaded = true;
+
 /* ── Constants ──────────────────────────────────────────── */
 const SS_KEY = 'log_api_key';
 const PAGE_SIZE = 50;
@@ -24,7 +26,7 @@ let streamController = null;
 let streamReconnectTimer = null;
 
 /* ── Init ───────────────────────────────────────────────── */
-window.addEventListener('DOMContentLoaded', () => {
+function initApp() {
   const saved = readStoredKey();
   keyInputs().forEach(input => {
     if (saved) input.value = saved;
@@ -93,7 +95,14 @@ window.addEventListener('DOMContentLoaded', () => {
     setStatus('', '');
     scheduleAutofillRestore();
   }
-});
+  window.__logAppReady = true;
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', initApp, { once: true });
+} else {
+  initApp();
+}
 
 /* ── URL sync ───────────────────────────────────────────── */
 function restoreFromURL() {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -196,5 +197,37 @@ func getLogs(store *Store) http.Handler {
 
 		result := store.Query(levels, keyword, from, to, page, size)
 		writeJSON(w, http.StatusOK, result)
+	})
+}
+
+func streamLogs(store *Store) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		ch := store.Subscribe()
+		defer store.Unsubscribe(ch)
+
+		// Send initial keep-alive comment
+		fmt.Fprintf(w, ": ok\n\n")
+		flusher.Flush()
+
+		for {
+			select {
+			case data := <-ch:
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			case <-r.Context().Done():
+				return
+			}
+		}
 	})
 }

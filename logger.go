@@ -43,10 +43,14 @@ const (
 )
 
 type Store struct {
-	mu       sync.RWMutex
-	path     string
-	maxBytes int64
-	retain   int
+	mu          sync.RWMutex
+	path        string
+	maxBytes    int64
+	retain      int
+	currentSize int64
+
+	listenerMu sync.Mutex
+	listeners  map[chan []byte]struct{}
 }
 
 func NewStore(path string, maxBytes int64, retain int) *Store {
@@ -56,7 +60,33 @@ func NewStore(path string, maxBytes int64, retain int) *Store {
 	if retain < 1 {
 		retain = defaultRetain
 	}
-	return &Store{path: path, maxBytes: maxBytes, retain: retain}
+
+	var size int64
+	if info, err := os.Stat(path); err == nil {
+		size = info.Size()
+	}
+
+	return &Store{
+		path:        path,
+		maxBytes:    maxBytes,
+		retain:      retain,
+		currentSize: size,
+		listeners:   make(map[chan []byte]struct{}),
+	}
+}
+
+func (s *Store) Subscribe() chan []byte {
+	s.listenerMu.Lock()
+	defer s.listenerMu.Unlock()
+	ch := make(chan []byte, 100) // buffer for bursty logs
+	s.listeners[ch] = struct{}{}
+	return ch
+}
+
+func (s *Store) Unsubscribe(ch chan []byte) {
+	s.listenerMu.Lock()
+	defer s.listenerMu.Unlock()
+	delete(s.listeners, ch)
 }
 
 func (s *Store) Append(ts int64, level string, message json.RawMessage) error {
@@ -71,19 +101,35 @@ func (s *Store) Append(ts int64, level string, message json.RawMessage) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := s.rotate(); err != nil {
+		s.mu.Unlock()
 		return err
 	}
 
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
 	defer f.Close()
 
-	_, err = f.Write(append(data, '\n'))
+	n, err := f.Write(append(data, '\n'))
+	if err == nil {
+		s.currentSize += int64(n)
+	}
+	s.mu.Unlock()
+
+	// Broadcast to SSE listeners
+	s.listenerMu.Lock()
+	for ch := range s.listeners {
+		select {
+		case ch <- data:
+		default:
+			// Buffer full, skip to keep performance
+		}
+	}
+	s.listenerMu.Unlock()
+
 	return err
 }
 
@@ -92,14 +138,7 @@ func (s *Store) Append(ts int64, level string, message json.RawMessage) error {
 // inode, so a Query that opened files just before rotation still reads
 // consistent data from the file it opened.
 func (s *Store) rotate() error {
-	info, err := os.Stat(s.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	if info.Size() < s.maxBytes {
+	if s.currentSize < s.maxBytes {
 		return nil
 	}
 	oldest := s.path + "." + strconv.Itoa(s.retain)
@@ -116,6 +155,7 @@ func (s *Store) rotate() error {
 	if err := os.Rename(s.path, s.path+".1"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	s.currentSize = 0
 	return nil
 }
 
@@ -254,10 +294,17 @@ func (s *Store) Query(levels []string, q string, from, to time.Time, page, size 
 	files := s.openQueryFiles()
 
 	lvlSet := levelsSet(levels)
-	qLower := strings.ToLower(q)
+	qBytes := []byte(strings.ToLower(q))
 	start := (page - 1) * size
 	items := make([]Entry, 0, size)
 	matchCount := 0
+
+	// 1GB RAM VM protection: limit total scan to prevent excessive CPU/IO
+	// app.js handles the "+" suffix for partial counts.
+	maxScan := start + size + 10000
+	if maxScan < 10000 {
+		maxScan = 10000
+	}
 
 	var fromMs, toMs int64
 	if !from.IsZero() {
@@ -284,8 +331,12 @@ func (s *Store) Query(levels []string, q string, from, to time.Time, page, size 
 			if lvlSet != nil && !lvlSet[e.Level] {
 				continue
 			}
-			if qLower != "" && !strings.Contains(strings.ToLower(string(e.Message)), qLower) {
-				continue
+			if len(qBytes) > 0 {
+				// bytes.ToLower allocates once per line, but string conversion
+				// and strings.ToLower allocates twice and puts more pressure on GC.
+				if !bytes.Contains(bytes.ToLower(e.Message), qBytes) {
+					continue
+				}
 			}
 			if fromMs > 0 && e.Timestamp < fromMs {
 				continue
@@ -301,8 +352,14 @@ func (s *Store) Query(levels []string, q string, from, to time.Time, page, size 
 			if len(items) < size {
 				items = append(items, e)
 			}
+			if matchCount >= maxScan {
+				break
+			}
 		}
 		file.file.Close()
+		if matchCount >= maxScan {
+			break
+		}
 	}
 
 	return QueryResult{Items: items, Page: page, Size: size, Total: matchCount}

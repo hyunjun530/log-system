@@ -184,14 +184,13 @@ func TestOpenQueryFilesSnapshotSurvivesRotation(t *testing.T) {
 func TestRotationErrorSurfaced(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "log.jsonl")
-	store := NewStore(logPath, 100, 3)
+	// Small maxBytes so next Append triggers rotation
+	store := NewStore(logPath, 50, 3)
 
-	if err := store.Append(1, "INFO", msg(`{"x":1}`)); err != nil {
+	if err := store.Append(1, "INFO", msg(`{"x":"`+strings.Repeat("a", 60)+`"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(logPath, []byte(strings.Repeat("x", 200)), 0644); err != nil {
-		t.Fatal(err)
-	}
+	
 	// Block the oldest rotation slot with a non-empty directory so os.Remove fails.
 	blockerDir := logPath + ".3"
 	if err := os.Mkdir(blockerDir, 0755); err != nil {
@@ -200,6 +199,7 @@ func TestRotationErrorSurfaced(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(blockerDir, "b"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// This Append will see currentSize > maxBytes and trigger rotate(), which will fail
 	if err := store.Append(2, "INFO", msg(`{"y":2}`)); err == nil {
 		t.Fatal("expected rotation error to be propagated, got nil")
 	}

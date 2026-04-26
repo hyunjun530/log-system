@@ -60,6 +60,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/logs", apiKeyMiddleware(key, lim, postLogs(store)))
 	mux.Handle("GET /api/logs", apiKeyMiddleware(key, lim, getLogs(store)))
+	mux.Handle("GET /api/logs/stream", apiKeyMiddleware(key, lim, streamLogs(store)))
 	mux.Handle("GET /static/", http.FileServer(http.FS(staticFS)))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		data, err := staticFS.ReadFile("static/index.html")

@@ -18,6 +18,7 @@ let inFlightController = null;
 let inFlightTimeout = null;
 let modalReturnFocus = null;
 let modalTrapHandler = null;
+let streamController = null;
 const FETCH_TIMEOUT_MS = 15000;
 
 /* ── Init ───────────────────────────────────────────────── */
@@ -288,6 +289,114 @@ function cancelInFlightRequest() {
   if (inFlightTimeout) clearTimeout(inFlightTimeout);
   inFlightController = null;
   inFlightTimeout = null;
+  stopStreaming();
+}
+
+function stopStreaming() {
+  if (streamController) {
+    streamController.abort();
+    streamController = null;
+  }
+}
+
+async function startStreaming() {
+  stopStreaming();
+  const key = apiKey();
+  if (!key) return;
+
+  const controller = new AbortController();
+  streamController = controller;
+
+  try {
+    const res = await fetch(appPath('/api/logs/stream'), {
+      headers: { 'X-API-Key': key },
+      signal: controller.signal,
+    });
+    if (!res.ok) return;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const entry = JSON.parse(line.slice(6));
+            handleStreamEntry(entry);
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      setTimeout(startStreaming, 3000); // retry after 3s
+    }
+  }
+}
+
+function handleStreamEntry(entry) {
+  // Only prepend if we are on the first page and no time filters are active
+  const from = document.getElementById('fromDt').value;
+  const to = document.getElementById('toDt').value;
+  if (currentPage !== 1 || from || to) return;
+
+  // Level filter
+  if (selectedLevels.size > 0 && !selectedLevels.has(entry.level)) return;
+
+  // Keyword filter
+  const q = document.getElementById('keyword').value.trim();
+  if (q) {
+    const msgStr = typeof entry.message === 'object' ? JSON.stringify(entry.message) : String(entry.message);
+    if (!msgStr.toLowerCase().includes(q.toLowerCase())) return;
+  }
+
+  // Prepend to currentItems
+  currentItems.unshift(entry);
+  if (currentItems.length > PAGE_SIZE) {
+    currentItems.pop();
+  }
+
+  // Update Table
+  const tbody = document.getElementById('tbody');
+  const table = document.getElementById('mainTable');
+  const empty = document.getElementById('emptyState');
+
+  if (table.style.display === 'none') {
+    table.style.display = '';
+    empty.style.display = 'none';
+  }
+
+  const tr = document.createElement('tr');
+  const idx = 0; // It will be the first row
+  // We need to shift indices of existing rows
+  document.querySelectorAll('#tbody tr').forEach(row => {
+    const oldIdx = parseInt(row.dataset.idx);
+    row.dataset.idx = oldIdx + 1;
+  });
+
+  tr.dataset.idx = "0";
+  tr.innerHTML = `
+    <td class="col-ts" title="${new Date(entry.timestamp).toISOString()}">${formatTs(entry.timestamp)}</td>
+    <td class="col-lvl col-lvl-${escHtml(entry.level)}">${escHtml(entry.level)}</td>
+    <td class="col-msg">${renderMessage(entry.message, q)}</td>
+  `;
+  
+  // Highlight animation
+  tr.style.backgroundColor = 'rgba(74, 158, 255, 0.2)';
+  tbody.prepend(tr);
+  setTimeout(() => { tr.style.backgroundColor = ''; }, 1000);
+
+  if (tbody.children.length > PAGE_SIZE) {
+    tbody.lastElementChild.remove();
+  }
 }
 
 async function fetchLogs() {
@@ -362,6 +471,7 @@ async function fetchLogs() {
     renderTable(data, q);
     setStatus('', '');
     pushURL();
+    startStreaming();
   } catch (err) {
     // Aborted by a newer request: stay quiet, the new one is in flight.
     if (controller !== inFlightController) {

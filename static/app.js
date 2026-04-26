@@ -25,7 +25,7 @@ let streamReconnectTimer = null;
 
 /* ── Init ───────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
-  const saved = sessionStorage.getItem(SS_KEY) || '';
+  const saved = readStoredKey();
   keyInputs().forEach(input => {
     if (saved) input.value = saved;
 
@@ -35,12 +35,12 @@ window.addEventListener('DOMContentLoaded', () => {
       hideAuthError();
       clearTimeout(apiKeyTimer);
       if (!key) {
-        sessionStorage.removeItem(SS_KEY);
+        clearStoredKey();
         cancelInFlightRequest();
         toggleLayout(false);
         return;
       }
-      sessionStorage.setItem(SS_KEY, key);
+      writeStoredKey(key);
       apiKeyTimer = setTimeout(search, 350);
     });
 
@@ -87,11 +87,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   restoreFromURL();
   setupKeyboard();
-  if (saved) {
-    toggleLayout(true);
-    setStatus('loading', '저장된 키 확인 중…');
+  if (!restoreAuthKeyAndFetch()) {
+    toggleLayout(false);
+    renderEmpty('not-authed');
+    setStatus('', '');
+    scheduleAutofillRestore();
   }
-  search();
 });
 
 /* ── URL sync ───────────────────────────────────────────── */
@@ -131,6 +132,49 @@ function keyInputs() {
 function syncKeyInputs(key, source) {
   keyInputs().forEach(input => {
     if (input !== source) input.value = key;
+  });
+}
+
+function readStoredKey() {
+  try {
+    return (sessionStorage.getItem(SS_KEY) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function writeStoredKey(key) {
+  try {
+    sessionStorage.setItem(SS_KEY, key);
+  } catch (_) {}
+}
+
+function clearStoredKey() {
+  try {
+    sessionStorage.removeItem(SS_KEY);
+  } catch (_) {}
+}
+
+function restoreAuthKeyAndFetch() {
+  const key = (readStoredKey() || apiKey()).trim();
+  if (!key) return false;
+
+  syncKeyInputs(key);
+  writeStoredKey(key);
+  hideAuthError();
+  toggleLayout(true);
+  setStatus('loading', '저장된 키 확인 중…');
+  fetchLogs();
+  return true;
+}
+
+function scheduleAutofillRestore() {
+  [100, 500, 1200].forEach(delay => {
+    setTimeout(() => {
+      const mainLayout = document.getElementById('mainLayout');
+      if (mainLayout && mainLayout.style.display !== 'none') return;
+      restoreAuthKeyAndFetch();
+    }, delay);
   });
 }
 
@@ -483,7 +527,7 @@ async function fetchLogs() {
     if (controller !== inFlightController) return;
 
     if (res.status === 401) {
-      sessionStorage.removeItem(SS_KEY);
+      clearStoredKey();
       showAuthError('API Key가 유효하지 않습니다. 다시 입력해 주세요.');
       toggleLayout(false);
       renderEmpty('not-authed');
@@ -509,7 +553,7 @@ async function fetchLogs() {
     const data = await res.json();
     if (controller !== inFlightController) return;
     toggleLayout(true);
-    sessionStorage.setItem(SS_KEY, key);
+    writeStoredKey(key);
     renderTable(data, q);
     setStatus('', '');
     pushURL();

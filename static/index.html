@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Log Viewer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='3' width='12' height='2' rx='1' fill='%2358a6ff'/%3E%3Crect x='2' y='7' width='8' height='2' rx='1' fill='%2358a6ff' opacity='.75'/%3E%3Crect x='2' y='11' width='10' height='2' rx='1' fill='%2358a6ff' opacity='.5'/%3E%3C/svg%3E">
 <style>
 /* ── Reset & Variables ─────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1061,9 +1062,25 @@ mark {
 
 <script>
 (() => {
-  const appVersion = '20260426-6';
+  const appVersion = '20260426-8';
   const versionEl = document.getElementById('appVersion');
   if (versionEl) versionEl.textContent = 'v' + appVersion;
+  try {
+    const savedKey = (sessionStorage.getItem('log_api_key') || '').trim();
+    if (savedKey) {
+      const authInput = document.getElementById('authApiKey');
+      const authScreen = document.getElementById('authScreen');
+      const mainLayout = document.getElementById('mainLayout');
+      const statusBadge = document.getElementById('statusBadge');
+      if (authInput) authInput.value = savedKey;
+      if (authScreen) authScreen.style.display = 'none';
+      if (mainLayout) mainLayout.style.display = 'flex';
+      if (statusBadge) {
+        statusBadge.textContent = '저장된 키 확인 중…';
+        statusBadge.className = 'statusBadge loading';
+      }
+    }
+  } catch (_) {}
   const path = window.location.pathname;
   const base = !path || path === '/' ? '' : path.replace(/\/$/, '');
   const script = document.createElement('script');

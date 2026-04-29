@@ -4,10 +4,12 @@
 
 This repository builds a single Go binary for a lightweight log collection and viewing service. Core server code lives at the repository root:
 
-- `main.go`: entry point, routing, embedded static file serving, server timeouts.
-- `auth.go`: `X-API-Key` middleware and timing-safe key comparison.
-- `handler.go`: HTTP handlers for `POST /api/logs` and `GET /api/logs`.
-- `logger.go`: JSONL storage, querying, pagination, and reverse scanning.
+- `main.go`: entry point, routing, embedded static file serving, server timeouts, and signal handling.
+- `auth.go`: `X-API-Key` middleware and timing-safe hashed key comparison.
+- `ratelimit.go`: Token-bucket based IP rate limiter for auth brute-force protection.
+- `middleware.go`: Logging middleware and response status tracking.
+- `handler.go`: HTTP handlers for ingestion (`/api/logs`, `/input`), retrieval, and SSE streaming.
+- `logger.go`: JSONL storage, querying, pagination, rotation, and real-time pub/sub.
 - `static/`: embedded frontend assets (`index.html`, `app.js`).
 - `*_test.go`: Go unit tests for handlers, auth, and storage behavior.
 

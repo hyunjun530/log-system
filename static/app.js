@@ -4,7 +4,7 @@ window.__logAppScriptLoaded = true;
 
 /* ── Constants ──────────────────────────────────────────── */
 const SS_KEY = 'log_api_key';
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
 const APP_BASE_PATH = getAppBasePath();
 const FETCH_TIMEOUT_MS = 15000;
 const STREAM_RETRY_MS = 3000;
@@ -14,6 +14,7 @@ let currentPage = 1;
 let selectedLevels = new Set();
 let selectedRow = -1; // index in current items
 let currentItems = [];
+let currentSort = 'default'; // 'default', 'desc', 'asc'
 let hasMore = false;
 let debounceTimer = null;
 let activePreset = null;
@@ -348,6 +349,34 @@ function resetFilters() {
 }
 
 /* ── Search / Page ───────────────────────────────────────── */
+function toggleSort() {
+  if (currentSort === 'default') currentSort = 'desc';
+  else if (currentSort === 'desc') currentSort = 'asc';
+  else currentSort = 'default';
+
+  updateSortUI();
+  applySort();
+  renderTableDOM();
+}
+
+function applySort() {
+  if (currentSort === 'desc') {
+    currentItems.sort((a, b) => b.timestamp - a.timestamp);
+  } else if (currentSort === 'asc') {
+    currentItems.sort((a, b) => a.timestamp - b.timestamp);
+  } else {
+    currentItems.sort((a, b) => a._origIdx - b._origIdx);
+  }
+}
+
+function updateSortUI() {
+  const el = document.getElementById('sortIcon');
+  if (!el) return;
+  if (currentSort === 'desc') el.textContent = '↓';
+  else if (currentSort === 'asc') el.textContent = '↑';
+  else el.textContent = '↕';
+}
+
 function search() { currentPage = 1; fetchLogs(); }
 function goPage(delta) { currentPage = Math.max(1, currentPage + delta); fetchLogs(); }
 
@@ -446,12 +475,31 @@ function handleStreamEntry(entry) {
   }
 
   // Prepend to currentItems
+  // Maintain _origIdx: shift others up, new one is 0
+  currentItems.forEach(e => { if (e._origIdx !== undefined) e._origIdx++; });
+  entry._origIdx = 0;
+  
   currentItems.unshift(entry);
   if (currentItems.length > PAGE_SIZE) {
     currentItems.pop();
   }
 
-  // Update Table
+  if (currentSort !== 'default') {
+    applySort();
+    renderTableDOM();
+    // Highlight new entry
+    const newIdx = currentItems.indexOf(entry);
+    if (newIdx !== -1) {
+      const tr = document.querySelector(`#tbody tr[data-idx="${newIdx}"]`);
+      if (tr) {
+        tr.style.backgroundColor = 'rgba(74, 158, 255, 0.2)';
+        setTimeout(() => { tr.style.backgroundColor = ''; }, 1000);
+      }
+    }
+    return;
+  }
+
+  // Update Table (Optimized default prepend)
   const tbody = document.getElementById('tbody');
   const table = document.getElementById('mainTable');
   const empty = document.getElementById('emptyState');
@@ -462,8 +510,7 @@ function handleStreamEntry(entry) {
   }
 
   const tr = document.createElement('tr');
-  const idx = 0; // It will be the first row
-  // We need to shift indices of existing rows
+  // We need to shift indices of existing rows in DOM
   document.querySelectorAll('#tbody tr').forEach(row => {
     const oldIdx = parseInt(row.dataset.idx);
     row.dataset.idx = oldIdx + 1;
@@ -597,29 +644,14 @@ function showSkeleton() {
 
 function renderTable(data, q) {
   currentItems = data.items || [];
+  // Assign original indices to preserve receipt order
+  currentItems.forEach((e, i) => e._origIdx = i);
+
   const total  = data.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   hasMore = currentPage < totalPages;
 
-  const tbody  = document.getElementById('tbody');
-  const empty  = document.getElementById('emptyState');
-  const table  = document.getElementById('mainTable');
-
-  if (currentItems.length === 0) {
-    table.style.display = 'none';
-    empty.style.display  = 'flex';
-    document.getElementById('emptyDetail').textContent =
-      buildActiveFiltersText() || '조회할 로그가 없습니다.';
-  } else {
-    empty.style.display  = 'none';
-    table.style.display  = '';
-    tbody.innerHTML = currentItems.map((e, i) => `
-      <tr data-idx="${i}">
-        <td class="col-ts" title="${new Date(e.timestamp).toISOString()}">${formatTs(e.timestamp)}</td>
-        <td class="col-lvl col-lvl-${escHtml(e.level)}">${escHtml(e.level)}</td>
-        <td class="col-msg">${renderMessage(e.message, q)}</td>
-      </tr>`).join('');
-  }
+  renderTableDOM();
 
   document.getElementById('pageInfo').textContent  = `${currentPage} 페이지`;
   document.getElementById('totalInfo').textContent = total
@@ -635,6 +667,33 @@ function renderTable(data, q) {
     (qText ? ` · "<strong>${escHtml(qText)}</strong>"` : '');
 
   selectedRow = -1;
+}
+
+function renderTableDOM() {
+  const tbody  = document.getElementById('tbody');
+  const empty  = document.getElementById('emptyState');
+  const table  = document.getElementById('mainTable');
+  const q      = document.getElementById('keyword').value.trim();
+
+  if (currentItems.length === 0) {
+    table.style.display = 'none';
+    empty.style.display  = 'flex';
+    document.getElementById('emptyDetail').textContent =
+      buildActiveFiltersText() || '조회할 로그가 없습니다.';
+  } else {
+    empty.style.display  = 'none';
+    table.style.display  = '';
+    
+    // Sort items in-place before rendering
+    applySort();
+
+    tbody.innerHTML = currentItems.map((e, i) => `
+      <tr data-idx="${i}">
+        <td class="col-ts" title="${new Date(e.timestamp).toISOString()}">${formatTs(e.timestamp)}</td>
+        <td class="col-lvl col-lvl-${escHtml(e.level)}">${escHtml(e.level)}</td>
+        <td class="col-msg">${renderMessage(e.message, q)}</td>
+      </tr>`).join('');
+  }
 }
 
 function renderEmpty(reason, detail) {

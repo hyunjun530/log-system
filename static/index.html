@@ -423,6 +423,29 @@ th {
   border-bottom: 1px solid var(--border);
 }
 
+.sort-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.sort-btn:hover { color: var(--text); }
+.sort-info {
+  font-size: 9px;
+  color: var(--muted);
+  font-weight: normal;
+  margin-left: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 td {
   padding: 7px 14px;
   font-size: 12px;
@@ -956,7 +979,12 @@ mark {
       <table id="mainTable" style="display:none">
         <thead>
           <tr>
-            <th style="width:140px">Timestamp</th>
+            <th style="width:160px">
+              <button class="sort-btn" onclick="toggleSort()" title="타임스탬프 정렬 (현재 페이지)">
+                Timestamp <span id="sortIcon">↕</span>
+                <span class="sort-info">(현재 페이지)</span>
+              </button>
+            </th>
             <th style="width:64px">Level</th>
             <th>Message</th>
           </tr>
@@ -1062,7 +1090,7 @@ mark {
 
 <script>
 (() => {
-  const appVersion = '20260426-10';
+  const appVersion = '20260429-01';
   const versionEl = document.getElementById('appVersion');
   if (versionEl) versionEl.textContent = 'v' + appVersion;
   window.__logAppScriptLoaded = false;

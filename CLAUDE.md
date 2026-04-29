@@ -43,13 +43,15 @@ Server listens on `:7070` by default (`LOG_PORT` overrides).
 Single Go binary, no external dependencies (stdlib only). All static assets (`static/`) are embedded via `embed.FS` at build time.
 
 **Request flow:**
-- `POST /api/logs` → `loggingMiddleware` → `apiKeyMiddleware` → `postLogs` → `Store.Append` → appends one JSON line to `logs.jsonl`
+- `POST /api/logs` & `POST /input` → `loggingMiddleware` → `apiKeyMiddleware` → `postLogs` → `Store.Append` → appends one JSON line to `logs.jsonl` and broadcasts to SSE listeners.
 - `GET /api/logs` → `loggingMiddleware` → `apiKeyMiddleware` → `getLogs` → `Store.Query` → reads + filters + paginates, returns JSON
+- `GET /api/logs/stream` → `loggingMiddleware` → `apiKeyMiddleware` → `streamLogs` → subscribes to `Store` updates, streams via Server-Sent Events (SSE)
 - `GET /` → serves embedded `static/index.html`
 - `GET /static/*` → serves embedded static assets
 
 **Key design decisions:**
-- `Store` in `logger.go` uses a `sync.RWMutex`. `Append` holds the write lock for the entire write (rotation + open + write). `Query` opens active + rotated file handles under the read lock and then scans lock-free, so large queries do not block writers. POSIX `os.Rename` keeps already-open reader fds pointing at the original inode, so rotations that happen mid-scan do not corrupt or duplicate in-progress reads.
+- `Store` in `logger.go` uses a `sync.RWMutex` for file access. `Append` holds the write lock for the entire write (rotation + open + write). `Query` opens active + rotated file handles under the read lock and then scans lock-free, so large queries do not block writers. SSE listeners are managed via a separate `sync.Mutex` for thread-safe subscription and broadcasting.
+- Real-time updates: `Store` implements a pub/sub mechanism. `Append` broadcasts new log entries to all active SSE subscribers. The `/api/logs/stream` handler uses this to provide real-time updates to the UI.
 - File rotation: when the active file size ≥ `LOG_MAX_BYTES`, the oldest retained file (`.LOG_RETAIN`) is removed, then `.N-1 → .N`, …, `.1 → .2`, then active → `.1`. Renames run in descending order so a crash mid-rotation can leave a duplicated `.N` but never a missing entry. Rotation errors are propagated to the caller — `Append` returns 500 to the client rather than silently swallowing them.
 - `message` field is `json.RawMessage` — the API requires a JSON object (`{...}`); strings, arrays, etc. are rejected with 400. Pretty-printed input is compacted before storage.
 - If the `message` object contains a `"timestamp"` field, it is extracted and used as the entry timestamp, then removed from the message before storage. Decoding uses `json.Decoder.UseNumber()` so int64 millisecond values keep full precision (`float64` would silently round above 2^53). Accepted forms: JSON integer number, RFC3339 / RFC3339Nano string, integer-string, or `null` (use server time). Other types return 400.
